@@ -1,48 +1,85 @@
+// src/services/ContentModerationService.ts
+
 import axios from 'axios'
-import { ModerationConfig, ModerationResult, Content } from '../types'
-import { LicenseService, LicenseType } from './LicenseService'
+import {
+  ModerationConfig,
+  ModerationResult,
+  Content,
+  LicensePayload,
+} from '../types'
+import { LicenseService } from './LicenseService'
+import { RateLimiter } from '../services/RateLimiter'
+import { ContentCache } from '../services/ContentCache'
+import { WebhookNotifier } from '../services/WebhookNotifier'
+import { UsageAnalytics } from '../services/UsageAnalytics'
 
 export class ContentModerationService {
   private config: ModerationConfig
   private licenseService: LicenseService
+  private rateLimiter: RateLimiter
+  private cache: ContentCache
+  private webhookNotifier: WebhookNotifier | null = null
+  private usageAnalytics: UsageAnalytics
 
   constructor(config: ModerationConfig, licenseService: LicenseService) {
     this.config = config
     this.licenseService = licenseService
+    this.rateLimiter = new RateLimiter(
+      config.rateLimitPoints,
+      config.rateLimitDuration,
+    )
+    this.cache = new ContentCache(config.cacheTTL)
+    this.usageAnalytics = new UsageAnalytics(config.backendUrl)
+  }
+
+  setWebhookUrl(url: string): void {
+    this.webhookNotifier = new WebhookNotifier(url)
   }
 
   async moderateContent(
     licenseKey: string,
     content: Content,
   ): Promise<ModerationResult> {
-    const license = this.licenseService.verifyLicenseKey(licenseKey)
+    const license = await this.licenseService.verifyLicenseKey(licenseKey)
     if (!license) {
       throw new Error('Invalid or expired license key')
     }
 
-    if (license.type === LicenseType.PAY_AS_YOU_GO) {
-      // Implement pay-as-you-go logic here
-      await this.deductPayAsYouGoCredit(license.userId)
-    } else {
-      // Check if the user has exceeded their monthly limit
-      if (await this.hasExceededLimit(license.userId, license.limit)) {
-        throw new Error('Monthly usage limit exceeded')
-      }
+    await this.rateLimiter.consume(licenseKey)
+
+    const cacheKey = `${licenseKey}:${content.type}:${content.data}`
+    const cachedResult = this.cache.get(cacheKey)
+    if (cachedResult) {
+      return cachedResult
     }
 
-    // Increment usage count
-    await this.incrementUsageCount(license.userId)
-
+    let result: ModerationResult
     switch (content.type) {
       case 'text':
-        return this.moderateText(content.data)
+        result = await this.moderateText(content.data)
+        break
       case 'image':
-        return this.moderateImage(content.data)
+        result = await this.moderateImage(content.data)
+        break
       case 'video':
-        return this.moderateVideo(content.data)
+        result = await this.moderateVideo(content.data)
+        break
       default:
         throw new Error(`Unsupported content type: ${content.type}`)
     }
+
+    this.cache.set(cacheKey, result)
+    await this.usageAnalytics.trackUsage(licenseKey, content.type)
+
+    if (this.webhookNotifier) {
+      await this.webhookNotifier.notify('content_moderated', result)
+    }
+
+    return result
+  }
+
+  async getUsageReport(licenseKey: string): Promise<any> {
+    return this.usageAnalytics.getUsageReport(licenseKey)
   }
 
   private async moderateText(text: string): Promise<ModerationResult> {
@@ -82,33 +119,9 @@ export class ContentModerationService {
   }
 
   private processAIResponse(aiResponse: any): ModerationResult {
-    // Process the AI response and return a standardized ModerationResult
-    // This is a simplified example and should be adapted based on the actual AI response format
     return {
       isApproved: aiResponse.isApproved,
       flaggedContent: aiResponse.flaggedContent || [],
     }
-  }
-
-  private async deductPayAsYouGoCredit(userId: string): Promise<void> {
-    // Implement logic to deduct credit for pay-as-you-go users
-    // This might involve interacting with a database or external payment service
-    console.log(`Deducting credit for user ${userId}`)
-  }
-
-  private async hasExceededLimit(
-    userId: string,
-    limit: number,
-  ): Promise<boolean> {
-    // Implement logic to check if a user has exceeded their monthly limit
-    // This might involve querying a database to get the user's current usage count
-    console.log(`Checking limit for user ${userId}`)
-    return false // Placeholder
-  }
-
-  private async incrementUsageCount(userId: string): Promise<void> {
-    // Implement logic to increment the usage count for a user
-    // This might involve updating a counter in a database
-    console.log(`Incrementing usage count for user ${userId}`)
   }
 }

@@ -10,6 +10,10 @@ The AI Content Moderation System is a comprehensive Node.js package that provide
 2. **License-based Usage**: Uses license keys for access control and usage tracking.
 3. **Flexible API**: Provides a simple API for easy integration with various applications.
 4. **Multiple License Types**: Supports different license types to accommodate various usage levels.
+5. **Rate Limiting**: Prevents API abuse and ensures fair usage.
+6. **Caching**: Improves performance and reduces unnecessary AI API calls.
+7. **Webhook Notifications**: Allows real-time updates for moderation results.
+8. **Usage Analytics**: Helps users track and manage their content moderation usage.
 
 ## Installation
 
@@ -29,10 +33,13 @@ const config = {
     videoAI: 'https://your-video-ai-endpoint.com',
   },
   licenseSecretKey: 'your-license-secret-key',
+  backendUrl: 'https://your-backend-url.com',
+  rateLimitPoints: 100,
+  rateLimitDuration: 60,
+  cacheTTL: 3600,
 }
 
 const licenseKey = 'your-license-key'
-
 const moderationService = initContentModeration(config, licenseKey)
 
 // Moderate content
@@ -43,6 +50,12 @@ moderationService
   })
   .then((result) => console.log(result))
   .catch((error) => console.error(error))
+
+// Set webhook URL
+moderationService.setWebhookUrl('https://your-webhook-url.com')
+
+// Get usage report
+moderationService.getUsageReport().then(console.log).catch(console.error)
 ```
 
 ## License Types

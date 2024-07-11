@@ -1,24 +1,35 @@
+// src/services/LicenseService.ts
+
 import jwt from 'jsonwebtoken'
-
-export enum LicenseType {
-  INDIVIDUAL = 'individual',
-  SMALL_BUSINESS = 'small_business',
-  ENTERPRISE = 'enterprise',
-  PAY_AS_YOU_GO = 'pay_as_you_go',
-}
-
-export interface LicensePayload {
-  type: LicenseType
-  limit: number
-  expiresAt: number
-  userId: string
-}
+import axios from 'axios'
+import { LicenseType, LicensePayload } from '../types'
 
 export class LicenseService {
   private secretKey: string
+  private backendUrl: string
 
-  constructor(secretKey: string) {
+  constructor(secretKey: string, backendUrl: string) {
     this.secretKey = secretKey
+    this.backendUrl = backendUrl
+  }
+
+  async verifyLicenseKey(licenseKey: string): Promise<LicensePayload | null> {
+    try {
+      const decoded = jwt.verify(licenseKey, this.secretKey) as LicensePayload
+      const now = Date.now()
+      if (decoded.expiresAt > now) {
+        // Perform real-time check against the backend
+        const response = await axios.post(`${this.backendUrl}/verify-license`, {
+          licenseKey,
+        })
+        if (response.data.valid) {
+          return decoded
+        }
+      }
+    } catch (error) {
+      console.error('Error verifying license key:', error)
+    }
+    return null
   }
 
   generateLicenseKey(
@@ -36,19 +47,6 @@ export class LicenseService {
     return jwt.sign(payload, this.secretKey, { expiresIn: '1y' })
   }
 
-  verifyLicenseKey(licenseKey: string): LicensePayload | null {
-    try {
-      const decoded = jwt.verify(licenseKey, this.secretKey) as LicensePayload
-      const now = Date.now()
-      if (decoded.expiresAt > now) {
-        return decoded
-      }
-    } catch (error) {
-      console.error('Error verifying license key:', error)
-    }
-    return null
-  }
-
   private getLimitForType(type: LicenseType): number {
     switch (type) {
       case LicenseType.INDIVIDUAL:
@@ -64,3 +62,4 @@ export class LicenseService {
     }
   }
 }
+export { LicenseType }

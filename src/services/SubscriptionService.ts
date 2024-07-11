@@ -1,11 +1,16 @@
+// src/services/Subscription.ts
+
 import Subscription from '../models/Subscription'
 import { LicenseService, LicenseType } from './LicenseService'
+import { UsageAnalytics } from './UsageAnalytics'
 
 export class SubscriptionService {
   private licenseService: LicenseService
+  private usageAnalytics: UsageAnalytics
 
-  constructor(licenseSecretKey: string) {
-    this.licenseService = new LicenseService(licenseSecretKey)
+  constructor(licenseSecretKey: string, backendUrl: string) {
+    this.licenseService = new LicenseService(licenseSecretKey, backendUrl)
+    this.usageAnalytics = new UsageAnalytics(backendUrl)
   }
 
   async createSubscription(
@@ -31,12 +36,11 @@ export class SubscriptionService {
     })
 
     await subscription.save()
-
     return licenseKey
   }
 
   async verifySubscription(licenseKey: string): Promise<boolean> {
-    const licenseInfo = this.licenseService.verifyLicenseKey(licenseKey)
+    const licenseInfo = await this.licenseService.verifyLicenseKey(licenseKey)
     if (!licenseInfo) {
       return false
     }
@@ -61,5 +65,9 @@ export class SubscriptionService {
     await subscription.save()
 
     return true
+  }
+
+  async getUsageReport(licenseKey: string): Promise<any> {
+    return this.usageAnalytics.getUsageReport(licenseKey)
   }
 }
